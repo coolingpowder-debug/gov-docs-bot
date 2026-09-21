@@ -1,44 +1,53 @@
-import json, datetime, time, uuid, os, mimetypes
-import streamlit as st
-import pandas as pd
-from google import genai
-from google.genai import types, errors
-from supabase import create_client
+# [ส่วนบนของไฟล์ยังเหมือนเดิมทุกอย่าง ตั้งแต่ import จนถึงหน้า อัปเดต/อัปโหลด]
 
-# ... (ส่วนการตั้งค่า st.set_page_config, Login และการเชื่อมต่อ Supabase ให้คงไว้เหมือนเดิมครับ) ...
-# (ผมย่อไว้เพื่อให้พี่วางได้สะดวก แต่พี่ไม่ต้องลบของเก่าทิ้งถ้ามันยังทำงานได้ดี)
+# ... (ช่วงโค้ดเดิมของพี่ตั้งแต่ import ถึงส่วนก่อน st.header("ระบบค้นหนังสืออนุมัติ..."))
 
-# [รวมฟังก์ชัน th, retry, be_to_ce, extract, ingest ไว้ที่เดิม]
+# --- หน้าจอค้นหา (ที่แก้ไขให้มีตารางสถานะแล้ว) ---
+st.header("ระบบค้นหนังสืออนุมัติ อนุญาตไปราชการ/อนุญาตใช้รถ ที่อนุมัติแล้ว (ปศข.2)")
+# ... (คงโค้ดการแสดงจำนวนเอกสารเดิมของพี่ไว้) ...
 
-# --- หน้าค้นหา (ที่ปรับปรุงแล้ว) ---
-st.header("ระบบค้นหนังสืออนุมัติ (ปศข.2)")
-use_date = st.checkbox("ระบุวันที่ไปราชการ")
+use_date = st.checkbox("ระบุวันที่ไปราชการ / ขอใช้รถ (ถ้าไม่ติ๊ก = ไม่กรองวันที่)")
 with st.form("search"):
+    kind_label = st.selectbox("ประเภทเอกสาร", ["ทั้งหมด"] + list(KIND_LABELS.values()))
     org = st.text_input("หน่วยงาน")
     name = st.text_input("ชื่อ-สกุล")
     province = st.text_input("จังหวัดที่ไป")
-    rng = st.date_input("วันที่", value=None) if use_date else None
+    # ... (คงโค้ดการรับค่าวันที่เดิมของพี่ไว้) ...
     go = st.form_submit_button("ค้นหา", type="primary")
 
 if go:
-    # [ใส่โค้ด logic การค้นหาแบบเดิมของพี่ตรงนี้]
-    # ...
+    # ... (โค้ดการเรียก sb.rpc("search_documents", ...) เดิมของพี่) ...
     st.session_state.rows = rows
     st.session_state.searched = True
 
 if st.session_state.get("searched"):
     rows = st.session_state.get("rows", [])
     st.write(f"พบ {len(rows)} ฉบับ")
+    
+    # --- ส่วนตารางสถานะ (เพิ่มตรงนี้) ---
     if rows:
         df = pd.DataFrame(rows)
-        # เพิ่มคอลัมน์สถานะดาวน์โหลดให้แสดงในตารางค้นหา
+        # เลือกเฉพาะคอลัมน์ที่จำเป็น + is_downloaded
+        # พี่สามารถเพิ่มชื่อคอลัมน์ใน list นี้ได้ตามต้องการครับ
+        display_df = df[['doc_no', 'sender_org', 'requester_names', 'is_downloaded']]
+        
+        st.write("---")
+        st.subheader("จัดการสถานะการดาวน์โหลด")
         edited_df = st.data_editor(
-            df[['file_name', 'sender_org', 'destination_province', 'is_downloaded']],
-            column_config={"is_downloaded": st.column_config.CheckboxColumn("ดาวน์โหลดแล้ว")},
+            display_df,
+            column_config={
+                "is_downloaded": st.column_config.CheckboxColumn("ดาวน์โหลดแล้ว", default=False),
+                "requester_names": st.column_config.ListColumn("รายชื่อ")
+            },
             use_container_width=True
         )
+        
         if st.button("บันทึกสถานะการดาวน์โหลด"):
             for i, row in edited_df.iterrows():
                 sb.table("documents").update({"is_downloaded": row["is_downloaded"]}).eq("id", rows[i]["id"]).execute()
-            st.success("บันทึกเรียบร้อย!")
+            st.success("บันทึกสถานะเรียบร้อย!")
             st.rerun()
+    
+    # --- ส่วนแสดงรายละเอียดด้านล่าง (คงเดิม) ---
+    for r in rows:
+        # ... (โค้ดแสดง expander รายละเอียดเดิมของพี่) ...
