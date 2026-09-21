@@ -1,139 +1,329 @@
-import json, datetime, time, uuid, os, mimetypes
-import streamlit as st
-import pandas as pd
-from google import genai
-from google.genai import types, errors
-from supabase import create_client
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <title>แผนการตรวจราชการ 2569</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap');
+        
+        @page {
+            size: A4;
+            margin: 1.5cm 1.5cm 1.5cm 1.5cm;
+        }
+        
+        body {
+            font-family: 'Sarabun', sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+            color: #000;
+            margin: 0;
+            padding: 0;
+        }
 
-st.set_page_config(page_title="ระบบค้นหนังสืออนุมัติ (ปศข.2)", page_icon="📄")
+        .page {
+            page-break-after: always;
+            position: relative;
+            background: #fff;
+        }
 
-if "ok" not in st.session_state:
-    st.session_state.ok = False
-if not st.session_state.ok:
-    pw = st.text_input("รหัสผ่าน", type="password")
-    if pw:
-        if pw == st.secrets["APP_PASSWORD"]:
-            st.session_state.ok = True
-            st.rerun()
-        else:
-            st.error("รหัสผ่านไม่ถูกต้อง")
-    st.stop()
+        .page:last-child {
+            page-break-after: avoid;
+        }
 
-sb = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
-client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
-MODEL = "gemini-3.6-flash"
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
 
-PROMPT = """คุณคือระบบอ่านหนังสือราชการไทยที่สแกนมา
-ดึงข้อมูลเป็น JSON ตามคีย์ต่อไปนี้เท่านั้น:
-doc_type (เลือกจาก: ขออนุมัติไปราชการ, ขออนุญาตใช้รถ, อื่นๆ),
-request_kind (ใช้ค่าใดค่าหนึ่งเท่านั้น:
-  "both" = เอกสารขออนุมัติไปราชการ และขออนุญาตใช้รถ ในฉบับเดียวกัน,
-  "trip" = ขออนุมัติไปราชการอย่างเดียว ไม่ได้ขออนุญาตใช้รถ,
-  "vehicle" = ขออนุญาตใช้รถอย่างเดียว,
-  null = เอกสารประเภทอื่น),
-approved (true/false: เป็น true เมื่อในเอกสารมีข้อความสถานะ "อนุมัติ / อนุญาต แล้ว"),
-approval_note, doc_no, doc_date, subject, addressee, sender_org, urgency,
-travel_start, travel_end, requester_names (รายการชื่อ),
-destination_province, destination_detail, purpose,
-summary, full_text
-กติกา: วันที่ให้ตอบเป็น YYYY-MM-DD. ไม่พบให้ใส่ null. ตอบเป็น JSON อย่างเดียว"""
+        .header h1 {
+            font-size: 18px;
+            margin: 0 0 5px 0;
+            font-weight: 700;
+        }
 
-FIELDS = ['doc_type', 'request_kind', 'approved', 'approval_note', 'doc_no',
-          'doc_date', 'subject', 'addressee', 'sender_org', 'urgency',
-          'travel_start', 'travel_end', 'requester_names',
-          'destination_province', 'destination_detail', 'purpose',
-          'summary', 'full_text', 'is_downloaded']
+        .header p {
+            font-size: 13px;
+            margin: 0;
+            color: #444;
+        }
 
-KIND_LABELS = {
-    "both": "ขออนุมัติไปราชการและขออนุญาตใช้รถฯ",
-    "trip": "ขออนุมัติไปราชการ (ไม่ขออนุญาตใช้รถฯ)",
-    "vehicle": "ขออนุญาตใช้รถฯ",
-}
+        .section-title {
+            font-size: 14px;
+            font-weight: 700;
+            background-color: #f2f2f2;
+            padding: 6px 10px;
+            margin-top: 15px;
+            margin-bottom: 8px;
+            border-left: 4px solid #333;
+        }
 
-MONTHS = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.",
-          "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."]
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 10px;
+            font-size: 13px;
+        }
 
-def th(d):
-    if not d: return "-"
-    y, m, dd = d.split("-")
-    return f"{int(dd)} {MONTHS[int(m) - 1]} {int(y) + 543}"
+        th, td {
+            border: 1px solid #000;
+            padding: 6px 8px;
+            text-align: left;
+            vertical-align: top;
+        }
 
-def retry(fn, tries=6):
-    for i in range(tries):
-        try: return fn()
-        except errors.ServerError: time.sleep(3 * (i + 1))
-    return fn()
+        th {
+            background-color: #fafafa;
+            font-weight: 600;
+            text-align: center;
+        }
 
-def be_to_ce(d):
-    if not d: return None
-    try:
-        y, m, dd = d.split('-')
-        y = int(y)
-        if y > 2400: y -= 543
-        return f"{y:04d}-{m}-{dd}"
-    except: return None
+        .center {
+            text-align: center;
+        }
+        
+        .col-id { width: 7%; }
+        .col-project { width: 63%; }
+        .col-agency { width: 30%; }
+    </style>
+</head>
+<body>
 
-def extract(data, mime):
-    r = retry(lambda: client.models.generate_content(
-        model=MODEL,
-        contents=[types.Part.from_bytes(data=data, mime_type=mime), PROMPT],
-        config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0)))
-    ex = json.loads(r.text)
-    if isinstance(ex, list): ex = ex[0]
-    for k in ('doc_date', 'travel_start', 'travel_end'): ex[k] = be_to_ce(ex.get(k))
-    ex['approved'] = bool(ex.get('approved'))
-    return ex
+    <div class="page">
+        <div class="header">
+            <h1>แผนการตรวจราชการของผู้ตรวจราชการกระทรวงเกษตรและสหกรณ์</h1>
+            <h1>ประจำปีงบประมาณ พ.ศ. ๒๕๖๙ (รอบที่ ๒)</h1>
+            <p>ข้อมูล ณ วันที่ 5 พ.ค. ๒๕๖๙</p>
+        </div>
 
-def ingest(name, data, mime, overwrite=False):
-    found = sb.table('documents').select('id').eq('file_name', name).execute().data
-    if found and not overwrite: return "ข้าม (มีชื่อไฟล์นี้แล้ว)"
-    ex = extract(data, mime)
-    sp = f"{uuid.uuid4()}{os.path.splitext(name)[1].lower()}"
-    sb.storage.from_('documents').upload(sp, data, {"content-type": mime})
-    row = {k: ex.get(k) for k in FIELDS if k != 'is_downloaded'}
-    row.update(file_path=sp, file_name=name, is_downloaded=False)
-    if found:
-        sb.table('documents').update(row).eq('id', found[0]['id']).execute()
-        return f"อัปเดตแล้ว | เลขที่ {ex.get('doc_no')}"
-    sb.table('documents').insert(row).execute()
-    return f"บันทึกแล้ว | เลขที่ {ex.get('doc_no')}"
+        <div class="section-title">นโยบายที่ ๑ ยกระดับการผลิตด้วยเทคโนโลยีและนวัตกรรม (จำนวน ๑ โครงการ)</div>
+        <table>
+            <thead>
+                <tr>
+                    <th class="col-id">ลำดับ</th>
+                    <th class="col-project">โครงการ</th>
+                    <th class="col-agency">หน่วยงาน</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="center">๑</td>
+                    <td>โครงการยกระดับศักยภาพสถาบันเกษตรกรให้เป็นผู้ให้บริการทางการเกษตรแบบครบวงจร (Agricultural Service Providers)</td>
+                    <td>กรมส่งเสริมสหกรณ์</td>
+                </tr>
+            </tbody>
+        </table>
 
-# --- หน้าเว็บ ---
-page = st.radio("เมนู", ["🔎 ค้นหา", "⬆️ อัพโหลดเอกสาร"], horizontal=True, label_visibility="collapsed")
+        <div class="section-title">นโยบายที่ ๒ เพิ่มรายได้เกษตรกร (จำนวน ๗ โครงการ)</div>
+        <table>
+            <thead>
+                <tr>
+                    <th class="col-id">ลำดับ</th>
+                    <th class="col-project">โครงการ</th>
+                    <th class="col-agency">หน่วยงาน</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="center">๒</td>
+                    <td>โครงการประยุกต์ใช้เทคโนโลยีการผลิตข้าวอย่างยั่งยืนเพื่อลดการปลดปล่อยก๊าซเรือนกระจก</td>
+                    <td>กรมการข้าว</td>
+                </tr>
+                <tr>
+                    <td class="center">๓</td>
+                    <td>โครงการส่งเสริมการไถกลบและผลิตปุ๋ยอินทรีย์เพื่อลดการปล่อยก๊าซเรือนกระจก</td>
+                    <td>กรมพัฒนาที่ดิน</td>
+                </tr>
+                <tr>
+                    <td class="center">๔</td>
+                    <td>บริหารจัดการที่ดินในพื้นที่เกษตรกรรมเพื่อเข้าสู่ความเป็นกลางทางคาร์บอน (Carbon Neutrality) และความสมดุลของการจัดการทรัพยากรที่ดิน (LDN)</td>
+                    <td>กรมพัฒนาที่ดิน</td>
+                </tr>
+                <tr>
+                    <td class="center">๕</td>
+                    <td>การส่งเสริมการเกษตรที่เป็นมิตรกับสิ่งแวดล้อม</td>
+                    <td>กรมส่งเสริมการเกษตร</td>
+                </tr>
+                <tr>
+                    <td class="center">๖</td>
+                    <td>โครงการส่งเสริมและพัฒนาสินค้าเกษตรอัตลักษณ์พื้นถิ่นเพื่อเข้าสู่ห่วงโซ่อุปทานเศรษฐกิจสร้างสรรค์</td>
+                    <td>กรมส่งเสริมการเกษตร</td>
+                </tr>
+                <tr>
+                    <td class="center">๗</td>
+                    <td>โครงการสินค้าเกษตรและบริการมูลค่าสูง ๑ ท้องถิ่น ๑ สินค้าเกษตรมูลค่าสูง ประจำปีงบประมาณ พ.ศ. ๒๕๖๙</td>
+                    <td>สำนักงานปลัดกระทรวงเกษตรและสหกรณ์</td>
+                </tr>
+                <tr>
+                    <td class="center">๘</td>
+                    <td>โครงการร้านอาหารวัตถุดิบปลอดภัยเลือกใช้สินค้า Q (Q Restaurant) ประจำปีงบประมาณ พ.ศ. ๒๕๖๙</td>
+                    <td>สำนักงานมาตรฐานสินค้าเกษตรและอาหารแห่งชาติ</td>
+                </tr>
+            </tbody>
+        </table>
 
-if page.startswith("⬆️"):
-    st.title("⬆️ อัพโหลดเอกสาร")
-    files = st.file_uploader("เลือกไฟล์", accept_multiple_files=True, type=["pdf", "jpg", "jpeg", "png", "webp"])
-    if files and st.button("อ่านและบันทึก", type="primary"):
-        for f in files:
-            msg = ingest(f.name, f.getvalue(), f.type, True)
-            st.write(f"✅ {f.name} — {msg}")
-    st.stop()
+        <div class="section-title">นโยบายที่ ๓ พัฒนาศักยภาพเกษตรกร (จำนวน ๑๐ โครงการ)</div>
+        <table>
+            <thead>
+                <tr>
+                    <th class="col-id">ลำดับ</th>
+                    <th class="col-project">โครงการ</th>
+                    <th class="col-agency">หน่วยงาน</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="center">๙</td>
+                    <td>โครงการส่งเสริมและพัฒนาอาชีพเพื่อแก้ไขปัญหาที่ดินทำกินของเกษตรกร</td>
+                    <td>กรมปศุสัตว์</td>
+                </tr>
+                <tr>
+                    <td class="center">๑๐</td>
+                    <td>โครงการเพิ่มประสิทธิภาพงานจัดที่ดินในพื้นที่นิคมสหกรณ์</td>
+                    <td>กรมส่งเสริมสหกรณ์</td>
+                </tr>
+                <tr>
+                    <td class="center">๑๑</td>
+                    <td>โครงการสำรวจตรวจสอบกันเขตและตรวจสอบรายแปลง</td>
+                    <td>กรมส่งเสริมสหกรณ์</td>
+                </tr>
+                <tr>
+                    <td class="center">๑๒</td>
+                    <td>โครงการจัดที่ดินเพื่อเกษตรกรรม</td>
+                    <td>สำนักงานการปฏิรูปที่ดินเพื่อเกษตรกรรม</td>
+                </tr>
+                <tr>
+                    <td class="center">๑๓</td>
+                    <td>โครงการส่งเสริมและพัฒนาสถาบันเกษตรกร</td>
+                    <td>กรมตรวจบัญชีสหกรณ์</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
 
-st.header("ระบบค้นหนังสืออนุมัติฯ (ปศข.2)")
-use_date = st.checkbox("ระบุวันที่ไปราชการ")
-with st.form("search"):
-    kind_label = st.selectbox("ประเภทเอกสาร", ["ทั้งหมด"] + list(KIND_LABELS.values()))
-    org = st.text_input("หน่วยงาน")
-    name = st.text_input("ชื่อ-สกุล")
-    go = st.form_submit_button("ค้นหา", type="primary")
+    <div class="page">
+        <table>
+            <thead>
+                <tr>
+                    <th class="col-id">ลำดับ</th>
+                    <th class="col-project">โครงการ</th>
+                    <th class="col-agency">หน่วยงาน</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="center">๑๔</td>
+                    <td>โครงการส่งเสริมและพัฒนาผู้ประกอบการวิสาหกิจชุมชน</td>
+                    <td>กรมส่งเสริมการเกษตร</td>
+                </tr>
+                <tr>
+                    <td class="center">๑๕</td>
+                    <td>โครงการส่งเสริมและพัฒนาเกษตรกรและองค์กรเกษตรกร</td>
+                    <td>กรมส่งเสริมการเกษตร</td>
+                </tr>
+                <tr>
+                    <td class="center">๑๖</td>
+                    <td>โครงการยกระดับสถาบันเกษตรกรให้เป็นผู้ประกอบการธุรกิจเกษตร</td>
+                    <td>กรมส่งเสริมสหกรณ์</td>
+                </tr>
+                <tr>
+                    <td class="center">๑๗</td>
+                    <td>โครงการส่งเสริมและพัฒนาสถาบันเกษตรกร</td>
+                    <td>กรมส่งเสริมสหกรณ์</td>
+                </tr>
+                <tr>
+                    <td class="center">๑๘</td>
+                    <td>โครงการสร้างความเข้มแข็งกลุ่มการผลิตด้านการเกษตร</td>
+                    <td>กรมหม่อนไหม</td>
+                </tr>
+            </tbody>
+        </table>
 
-if go:
-    kind = next((k for k, v in KIND_LABELS.items() if v == kind_label), None)
-    rows = sb.rpc("search_documents", {"p_org": org.strip() or None, "p_name": name.strip() or None, "p_kind": kind}).execute().data
-    st.session_state.rows = rows
-    st.session_state.searched = True
+        <div class="section-title">นโยบายที่ ๔ ตลาดนำการผลิต</div>
+        <table>
+            <thead>
+                <tr>
+                    <th class="col-id">ลำดับ</th>
+                    <th class="col-project">โครงการ</th>
+                    <th class="col-agency">หน่วยงาน</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="center">๑๙</td>
+                    <td>โครงการระบบส่งเสริมเกษตรแบบแปลงใหญ่ เพื่อปรับเพิ่มประสิทธิภาพการผลิต</td>
+                    <td>กรมส่งเสริมการเกษตร</td>
+                </tr>
+                <tr>
+                    <td class="center">๒๐</td>
+                    <td>โครงการยกระดับสินค้าเกษตรมูลค่าสูง (ทุเรียน ปาล์มน้ำมัน ลำไย กาแฟ และข้าวโพดเลี้ยงสัตว์)</td>
+                    <td>กรมวิชาการเกษตร</td>
+                </tr>
+                <tr>
+                    <td class="center">๒๑</td>
+                    <td>โครงการส่งเสริมและพัฒนาสินค้าเกษตรชีวภาพ (สมุนไพร)</td>
+                    <td>สำนักงานปลัดกระทรวงเกษตรและสหกรณ์</td>
+                </tr>
+                <tr>
+                    <td class="center">๒๒</td>
+                    <td>โครงการป้องกันและแก้ไขปัญหาการทำประมง</td>
+                    <td>กรมประมง</td>
+                </tr>
+                <tr>
+                    <td class="center">๒๓</td>
+                    <td>โครงการเฝ้าระวัง ป้องกัน ควบคุมโรค และพัฒนาสุขภาพสัตว์</td>
+                    <td>กรมปศุสัตว์</td>
+                </tr>
+                <tr>
+                    <td class="center">๒๔</td>
+                    <td>การป้องกันและปราบปรามการลักลอบนำเข้า/ส่งออกสินค้าเกษตรผิดกฎหมาย</td>
+                    <td>กรมวิชาการเกษตร</td>
+                </tr>
+                <tr>
+                    <td class="center">๒๕</td>
+                    <td>โครงการยกระดับสินค้าเกษตรมูลค่าสูง</td>
+                    <td>กรมส่งเสริมการเกษตร</td>
+                </tr>
+                <tr>
+                    <td class="center">๒๖</td>
+                    <td>โครงการระบบส่งเสริมสินค้าเกษตรแบบแปลงใหญ่</td>
+                    <td>กรมการข้าว</td>
+                </tr>
+            </tbody>
+        </table>
 
-if st.session_state.get("searched"):
-    rows = st.session_state.get("rows", [])
-    if rows:
-        df = pd.DataFrame(rows)
-        st.write("จัดการสถานะการดาวน์โหลดในตารางด้านล่าง:")
-        edited_df = st.data_editor(df[['file_name', 'sender_org', 'is_downloaded']], 
-                                   column_config={"is_downloaded": st.column_config.CheckboxColumn("ดาวน์โหลดแล้ว")},
-                                   use_container_width=True)
-        if st.button("บันทึกการดาวน์โหลด"):
-            for i, row in edited_df.iterrows():
-                sb.table("documents").update({"is_downloaded": row["is_downloaded"]}).eq("id", rows[i]["id"]).execute()
-            st.success("บันทึกเรียบร้อย!")
-            st.rerun()
+        <div class="section-title">นโยบายที่ ๕ บริหารจัดการทรัพยากรน้ำทั้งระบบอย่างยั่งยืน</div>
+        <table>
+            <thead>
+                <tr>
+                    <th class="col-id">ลำดับ</th>
+                    <th class="col-project">โครงการ</th>
+                    <th class="col-agency">หน่วยงาน</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td class="center">๒๗</td>
+                    <td>โครงการป้องกันและบรรเทาภัยจากน้ำ</td>
+                    <td>กรมชลประทาน</td>
+                </tr>
+                <tr>
+                    <td class="center">๒๘</td>
+                    <td>โครงการก่อสร้างแหล่งน้ำในไร่นานอกเขตชลประทาน</td>
+                    <td>กรมพัฒนาที่ดิน</td>
+                </tr>
+                <tr>
+                    <td class="center">๒๙</td>
+                    <td>โครงการอนุรักษ์ดินและบริหารจัดการน้ำเพื่อความมั่นคงภาคการเกษตร พื้นที่เกษตรน้ำฝน</td>
+                    <td>กรมพัฒนาที่ดิน</td>
+                </tr>
+                <tr>
+                    <td class="center">๓๐</td>
+                    <td>การบรรเทาปัญหาหมอกควันและฝุ่นละอองขนาดเล็ก PM ๒.๕</td>
+                    <td>กรมฝนหลวงและการบินเกษตร</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+</body>
+</html>
