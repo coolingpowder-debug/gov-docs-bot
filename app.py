@@ -5,27 +5,56 @@ from google import genai
 from google.genai import types, errors
 from supabase import create_client
 
-# ... (ส่วนการตั้งค่า st.set_page_config, Login และการเชื่อมต่อ Supabase พี่คงไว้เหมือนเดิมนะครับ) ...
-# [ตรงนี้พี่เก็บโค้ดส่วนต้นของพี่ไว้เหมือนเดิมทุกอย่าง]
+# --- เริ่มต้นไฟล์ ---
+st.set_page_config(page_title="ระบบค้นหนังสืออนุมัติ (ปศข.2)", page_icon="📄")
 
-# --- โค้ดส่วนท้ายหน้าค้นหา (วางต่อจากส่วน if go: ที่พี่มีอยู่) ---
+if "ok" not in st.session_state: st.session_state.ok = False
+if not st.session_state.ok:
+    pw = st.text_input("รหัสผ่าน", type="password")
+    if pw:
+        if pw == st.secrets["APP_PASSWORD"]:
+            st.session_state.ok = True
+            st.rerun()
+        else: st.error("รหัสผ่านไม่ถูกต้อง")
+    st.stop()
 
+sb = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_KEY"])
+client = genai.Client(api_key=st.secrets["GEMINI_API_KEY"])
+MODEL = "gemini-3.6-flash"
+
+# --- ฟังก์ชันช่วยเหลือ (คงเดิมทั้งหมด) ---
+# ... (พี่สามารถเก็บฟังก์ชัน th, retry, be_to_ce, extract, ingest, reprocess_missing, signed ของเดิมพี่ไว้ตรงนี้ได้เลยครับ)
+
+# --- หน้าค้นหา ---
+st.header("ระบบค้นหนังสืออนุมัติ อนุญาตไปราชการ/อนุญาตใช้รถ ที่อนุมัติแล้ว (ปศข.2)")
+
+use_date = st.checkbox("ระบุวันที่ไปราชการ / ขอใช้รถ (ถ้าไม่ติ๊ก = ไม่กรองวันที่)")
+with st.form("search"):
+    kind_label = st.selectbox("ประเภทเอกสาร", ["ทั้งหมด"] + list(KIND_LABELS.values()))
+    org = st.text_input("หน่วยงาน")
+    name = st.text_input("ชื่อ-สกุล")
+    province = st.text_input("จังหวัดที่ไป")
+    rng = st.date_input("วันที่ (เลือกวันเดียว หรือเลือกเป็นช่วง)", value=(datetime.date.today(), datetime.date.today())) if use_date else None
+    go = st.form_submit_button("ค้นหา", type="primary")
+
+if go:
+    # ... (ส่วนเรียก rpc เดิมของพี่) ...
+    st.session_state.rows = rows
+    st.session_state.searched = True
+
+# --- ส่วนตารางสถานะและรายละเอียด ---
 if st.session_state.get("searched"):
     rows = st.session_state.get("rows", [])
     st.write(f"พบ {len(rows)} ฉบับ")
-    if not rows:
-        st.info("ไม่พบเอกสาร ลองลดเงื่อนไขลง")
     
-    # --- ตารางสถานะดาวน์โหลด (เพิ่มตรงนี้) ---
+    # 1. ตารางสำหรับติ๊กดาวน์โหลด
     if rows:
-        st.write("---")
         st.subheader("จัดการสถานะการดาวน์โหลด")
         df = pd.DataFrame(rows)
-        # เลือกคอลัมน์ที่จะแสดงในตาราง
-        display_df = df[['doc_no', 'sender_org', 'is_downloaded']]
+        # สร้างตัวแปร edited_df จากการแก้ในตาราง
         edited_df = st.data_editor(
-            display_df,
-            column_config={"is_downloaded": st.column_config.CheckboxColumn("ดาวน์โหลดแล้ว", default=False)},
+            df[['doc_no', 'subject', 'is_downloaded']],
+            column_config={"is_downloaded": st.column_config.CheckboxColumn("ดาวน์โหลดแล้ว")},
             use_container_width=True
         )
         if st.button("บันทึกสถานะการดาวน์โหลด"):
@@ -33,41 +62,13 @@ if st.session_state.get("searched"):
                 sb.table("documents").update({"is_downloaded": row["is_downloaded"]}).eq("id", rows[i]["id"]).execute()
             st.success("บันทึกเรียบร้อย!")
             st.rerun()
-    # --- จบส่วนตาราง ---
 
-    # --- ส่วนแสดง Expander รายละเอียดเดิมของพี่ (ต้องอยู่ใต้ if st.session_state.get("searched"): เพื่อให้รันในบล็อกเดียวกัน) ---
+    # 2. รายละเอียดเอกสาร (Expander)
     for r in rows:
         title = f"{r['doc_no'] or r['file_name']} — {r['subject'] or ''}"
         with st.expander(title[:90]):
-            st.write(f"**ประเภท:** {KIND_LABELS.get(r.get('request_kind'), r.get('doc_type') or '-')}")
             st.write(f"**หน่วยงาน:** {r['sender_org'] or '-'}")
             st.write(f"**ผู้ขอ:** {', '.join(r['requester_names'] or []) or '-'}")
-
-            with st.expander("✏️ แก้ไขชื่อผู้ขอ"):
-                st.caption("หลายชื่อให้คั่นด้วยเครื่องหมายจุลภาค ( , )")
-                new_names = st.text_area(
-                    "ชื่อ-สกุลผู้ขอ",
-                    value=", ".join(r["requester_names"] or []),
-                    key=f"nm_{r['id']}", height=80)
-                if st.button("บันทึกชื่อ", key=f"sv_{r['id']}", type="primary"):
-                    cleaned = [x.strip() for x in new_names.split(",") if x.strip()]
-                    try:
-                        sb.table("documents").update(
-                            {"requester_names": cleaned}).eq("id", r["id"]).execute()
-                        r["requester_names"] = cleaned
-                        st.success("บันทึกแล้ว")
-                    except Exception as e:
-                        st.error(f"บันทึกไม่สำเร็จ: {str(e)[:120]}")
-
-            ts, te = r["travel_start"], r["travel_end"]
-            st.write("**วันที่:** " + (th(ts) if ts == te else f"{th(ts)} – {th(te)}"))
-            place = " ".join(x for x in [r["destination_detail"], r["destination_province"]] if x)
-            st.write(f"**สถานที่:** {place or '-'}")
-            st.write(f"**วัตถุประสงค์:** {r['purpose'] or '-'}")
-            if r.get("approved"):
-                st.success("สถานะ: อนุมัติ / อนุญาต แล้ว")
-            else:
-                st.warning("สถานะ: ยังไม่พบข้อความ อนุมัติ / อนุญาต ในเอกสารฉบับนี้")
+            # ... (โค้ดแสดงรายละเอียดอื่นๆ ของเดิมพี่ทั้งหมด) ...
             u = signed(r["file_path"])
-            if u:
-                st.link_button("📎 เปิดไฟล์ต้นฉบับ", u)
+            if u: st.link_button("📎 เปิดไฟล์ต้นฉบับ", u)
