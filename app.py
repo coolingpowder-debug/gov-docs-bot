@@ -195,21 +195,30 @@ if page.startswith("⬆️"):
     st.stop()
 
 st.header("ระบบค้นหนังสืออนุมัติ อนุญาตไปราชการ/อนุญาตใช้รถ ที่อนุมัติแล้ว (ปศข.2)")
+try:
+    total = sb.table('documents').select('id', count='exact').limit(1).execute().count
+    st.caption(f"เอกสารในระบบทั้งหมด {total} ฉบับ")
+except Exception:
+    pass
+
+use_date = st.checkbox("ระบุวันที่ไปราชการ / ขอใช้รถ (ถ้าไม่ติ๊ก = ไม่กรองวันที่)")
 with st.form("search"):
     kind_label = st.selectbox("ประเภทเอกสาร", ["ทั้งหมด"] + list(KIND_LABELS.values()))
     org = st.text_input("หน่วยงาน")
     name = st.text_input("ชื่อ-สกุล")
     province = st.text_input("จังหวัดที่ไป")
-    use_date = st.checkbox("ระบุวันที่ไปราชการ / ขอใช้รถ")
-    today = datetime.date.today()
-    rng = st.date_input("วันที่ (เลือกวันเดียว หรือเลือกเป็นช่วง)", value=(today, today))
+    rng = None
+    if use_date:
+        today = datetime.date.today()
+        rng = st.date_input("วันที่ (เลือกวันเดียว หรือเลือกเป็นช่วง)", value=(today, today))
     go = st.form_submit_button("ค้นหา", type="primary")
 
 if go:
     d_from = d_to = None
-    if use_date:
+    if use_date and rng:
         if isinstance(rng, (tuple, list)):
-            d_from, d_to = rng[0], rng[-1]
+            if len(rng) > 0:
+                d_from, d_to = rng[0], rng[-1]
         else:
             d_from = d_to = rng
     kind = next((k for k, v in KIND_LABELS.items() if v == kind_label), None)
@@ -225,6 +234,9 @@ if go:
         st.error(f"ค้นหาไม่สำเร็จ: {str(e)[:120]}")
         rows = []
     st.write(f"พบ {len(rows)} ฉบับ")
+    if not rows:
+        st.info("ไม่พบเอกสาร ลองลดเงื่อนไขลง เช่น ค้นด้วยชื่อหรือนามสกุลอย่างเดียว "
+                "ตัวสะกดต้องตรงกับในเอกสาร (เช่น ห หีบ / ม ม้า) หรือลองพิมพ์แค่บางส่วนของชื่อ")
     for r in rows:
         title = f"{r['doc_no'] or r['file_name']} — {r['subject'] or ''}"
         with st.expander(title[:90]):
