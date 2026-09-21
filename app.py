@@ -109,7 +109,6 @@ if page.startswith("📊"):
         res = sb.table('documents').select('*').eq('approved', True).order('created_at', desc=True).limit(20).execute()
         d_rows = res.data or []
     except Exception:
-        # กรณีฐานข้อมูลยังไม่มีคอลัมน์ created_at ให้ดึงแบบธรรมดาก่อนกันพัง
         res = sb.table('documents').select('*').eq('approved', True).limit(20).execute()
         d_rows = res.data or []
 
@@ -125,7 +124,10 @@ if page.startswith("📊"):
             except:
                 formatted_created = c_at or "-"
                 
-            req_names = ", ".join(r.get('requester_names') or []) or "-"
+            # ดึงเฉพาะชื่อผู้ขอหลักคนแรก
+            names_list = r.get('requester_names') or []
+            req_names = names_list[0] if names_list else "-"
+            
             org_dest = r.get('sender_org') or "-"
             prov = r.get('destination_province') or "-"
             
