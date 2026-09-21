@@ -114,7 +114,20 @@ if st.session_state.get("searched"):
     if rows:
         st.subheader("จัดการสถานะการดาวน์โหลด")
         df = pd.DataFrame(rows)
-        edited_df = st.data_editor(df[['doc_no', 'subject', 'is_downloaded']], column_config={"is_downloaded": st.column_config.CheckboxColumn("ดาวน์โหลดแล้ว")}, use_container_width=True)
+        
+        # ตรวจสอบว่ามีคอลัมน์ is_downloaded หรือยัง ถ้าไม่มีให้สร้างเป็น False
+        if 'is_downloaded' not in df.columns:
+            df['is_downloaded'] = False
+            
+        # เลือกคอลัมน์เฉพาะที่มีอยู่จริง
+        cols_to_show = [c for c in ['doc_no', 'subject', 'is_downloaded'] if c in df.columns]
+        
+        edited_df = st.data_editor(
+            df[cols_to_show], 
+            column_config={"is_downloaded": st.column_config.CheckboxColumn("ดาวน์โหลดแล้ว")}, 
+            use_container_width=True
+        )
+        
         if st.button("บันทึกสถานะการดาวน์โหลด"):
             for i, row in edited_df.iterrows():
                 sb.table("documents").update({"is_downloaded": row["is_downloaded"]}).eq("id", rows[i]["id"]).execute()
