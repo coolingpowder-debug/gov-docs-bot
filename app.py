@@ -124,7 +124,6 @@ if page.startswith("📊"):
             except:
                 formatted_created = c_at or "-"
                 
-            # ดึงเฉพาะชื่อผู้ขอหลักคนแรก
             names_list = r.get('requester_names') or []
             req_names = names_list[0] if names_list else "-"
             
@@ -166,7 +165,7 @@ elif page.startswith("⬆️"):
 
 # --- 3. หน้าค้นหาเอกสาร ---
 else:
-    st.header("ระบบค้นหนังสืออนุมัติฯ (ปศข.2)")
+    st.header("ระบบค้นหนังสืออนุมัติ อนุญาตไปราชการ/อนุญาตใช้รถ ที่อนุมัติแล้ว (ปศข.2)")
     use_date = st.checkbox("ระบุวันที่ไปราชการ / ขอใช้รถ (ถ้าไม่ติ๊ก = ไม่กรองวันที่)")
     with st.form("search"):
         kind_label = st.selectbox("ประเภทเอกสาร", ["ทั้งหมด"] + list(KIND_LABELS.values()))
