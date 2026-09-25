@@ -141,7 +141,7 @@ if page.startswith("📊"):
                 "ลำดับ": idx,
                 "วันที่Adminอัพโหลด": formatted_created,
                 "ชื่อผู้ขอไปราชการ/ขอใช้รถ": req_names,
-                "หน่วยงานปลายทางที่ไป": org_dest,
+                "หน่วยงานที่ขอ": org_dest,
                 "จังหวัดที่ไป": prov,
                 "วันที่ไป": date_single,
                 "ว.ด.ป. - ว.ด.ป.ที่": date_range,
